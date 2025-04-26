@@ -9,8 +9,6 @@ import traceback
 load_dotenv()
 
 # --- Configuration ---
-# <<< MODIFICATION START: Load LIVE API Keys >>>
-# Ensure you have generated READ-ONLY keys for the live API
 api_key = os.getenv("BINANCE_LIVE_API_KEY")
 api_secret = os.getenv("BINANCE_LIVE_API_SECRET")
 
@@ -18,14 +16,11 @@ if not api_key or not api_secret:
     print("Error: Binance LIVE API keys (BINANCE_LIVE_API_KEY, BINANCE_LIVE_API_SECRET) not found in .env file.")
     print("Please generate READ-ONLY keys from your main Binance account.")
     exit()
-# <<< MODIFICATION END >>>
 
 # --- Strategy & Backtesting Parameters ---
 symbol = 'BTCUSDT'
-interval = Client.KLINE_INTERVAL_4HOUR # Keep 4h for now
-# <<< MODIFICATION START: Fetching 1000 candles initially from LIVE API >>>
-limit = 1000 # Fetch 1000 first to test live connection & basic data length
-# <<< MODIFICATION END >>>
+interval = Client.KLINE_INTERVAL_4HOUR
+limit = 1000 
 
 # Indicator Parameters
 ema_short_period = 12
@@ -36,7 +31,7 @@ rsi_buy_threshold = 55
 rsi_sell_threshold = 45
 rsi_overbought = 75
 atr_sl_multiplier = 2.5
-atr_tp_multiplier = 2.5 # Keep 1:1 for now
+atr_tp_multiplier = 2.5 
 
 initial_capital = 10000.0
 trade_amount_usd = 1000.0
@@ -44,11 +39,9 @@ fee_percent = 0.001
 
 # --- Initialize Binance Client ---
 try:
-    # <<< MODIFICATION START: Connect to LIVE API (testnet=False) >>>
     print("Attempting to connect to Binance LIVE API (using READ-ONLY keys)...")
     client = Client(api_key, api_secret, testnet=False)
-    # <<< MODIFICATION END >>>
-    client.ping() # Test connectivity
+    client.ping()
     print("Successfully connected to Binance LIVE API.")
 except Exception as e:
     print(f"Error connecting to Binance LIVE API: {e}")
@@ -56,13 +49,12 @@ except Exception as e:
     exit()
 
 # --- Custom Technical Indicator Functions ---
-# (Keep your custom calculate_rsi and calculate_atr functions here)
 def calculate_rsi(series, period):
     delta = series.diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=period, min_periods=period).mean() # Ensure enough periods
-    avg_loss = loss.rolling(window=period, min_periods=period).mean() # Ensure enough periods
+    avg_gain = gain.rolling(window=period, min_periods=period).mean() 
+    avg_loss = loss.rolling(window=period, min_periods=period).mean() 
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -72,23 +64,20 @@ def calculate_atr(high, low, close, period):
     tr2 = abs(high - close.shift())
     tr3 = abs(low - close.shift())
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1, skipna=False)
-    atr = tr.rolling(window=period, min_periods=period).mean() # Ensure enough periods
+    atr = tr.rolling(window=period, min_periods=period).mean() 
     return atr
 
 # --- Fetch Historical Candlestick Data ---
 try:
-    # <<< MODIFICATION START: Fetching from LIVE API >>>
     print(f"\nFetching {limit} candlesticks for {symbol} ({interval}) from LIVE API...")
     klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
     print(f"Successfully fetched {len(klines)} candlesticks.")
-    # <<< MODIFICATION END >>>
 
     if not klines:
         print("Error: No data fetched from LIVE API.")
         exit()
 
     # --- Process Data ---
-    # (Data processing remains the same)
     columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
     df = pd.DataFrame(klines, columns=[
         'timestamp', 'open', 'high', 'low', 'close', 'volume',
@@ -102,7 +91,6 @@ try:
     df.set_index('timestamp', inplace=True)
 
     # --- Calculate Technical Indicators ---
-    # (Indicator calculation remains the same)
     print("\nCalculating Technical Indicators (EMA, RSI, ATR)...")
     df[f'EMA_{ema_short_period}'] = df['close'].ewm(span=ema_short_period, adjust=False).mean()
     df[f'EMA_{ema_long_period}'] = df['close'].ewm(span=ema_long_period, adjust=False).mean()
@@ -119,7 +107,6 @@ try:
     print("-" * 30)
 
     # --- Define Strategy Signals ---
-    # (Signal logic remains the same)
     print("\nGenerating Buy/Sell signals based on EMA, RSI...")
     df['Signal'] = 0
     ema_short_col = f'EMA_{ema_short_period}'
@@ -137,7 +124,6 @@ try:
     df.loc[sell_signal, 'Signal'] = -1
 
     # --- Backtesting Simulation ---
-    # (Backtesting loop remains the same)
     print(f"\nStarting backtesting simulation with dynamic ATR SL/TP...")
     print(f"ATR Multipliers: SL={atr_sl_multiplier}, TP={atr_tp_multiplier}")
     cash = initial_capital
@@ -155,12 +141,11 @@ try:
         current_close = df['close'].iloc[i]
         current_low = df['low'].iloc[i]
         current_high = df['high'].iloc[i]
-        # <<< Add check for NaN ATR >>>
         current_atr = df[atr_col].iloc[i]
-        if pd.isna(current_atr) or current_atr == 0: # Cannot set SL/TP if ATR is invalid
+        if pd.isna(current_atr) or current_atr == 0: 
              print(f"Warning {current_index}: Skipping bar due to invalid ATR ({current_atr})")
-             portfolio_values.append(cash + (crypto_held * current_close)) # Append value before skipping
-             continue # Skip to next bar
+             portfolio_values.append(cash + (crypto_held * current_close)) 
+             continue 
 
         actual_signal_this_bar = df['Signal'].iloc[i]
         current_value = cash + (crypto_held * current_close)
@@ -214,7 +199,6 @@ try:
 
 
     # --- Post-Loop Calculations ---
-    # (Post-loop calculations remain the same)
     final_value = cash + (crypto_held * df['close'].iloc[-1] if crypto_held > 0 and not df.empty else cash) # Handle empty df case
     # Ensure portfolio_values has at least one element if df was processed
     if len(df) > 0 and not portfolio_values: # If loop was skipped due to ATR=0 but df existed
@@ -225,7 +209,6 @@ try:
 
 
     # --- Calculate Performance Metrics ---
-    # (Metrics calculation remains the same)
     print("\n--- Backtest Results ---")
     total_return_percent = ((final_value - initial_capital) / initial_capital) * 100
     start_date = df.index[0] if not df.empty else "N/A"
@@ -277,7 +260,7 @@ try:
             print(f"Warning: Portfolio values length ({len(portfolio_values)}) vs index length ({len(portfolio_index)}) mismatch. Cannot calculate drawdown reliably.")
             max_drawdown = "N/A"
         else:
-            max_drawdown = 0.0 # No trades, no drawdown
+            max_drawdown = 0.0 
 
     else:
         print("No trades were executed during this period.")
@@ -286,7 +269,6 @@ try:
     print("-" * 30)
 
     # --- Plotting Equity Curve and Signals ---
-    # (Plotting remains the same)
     print("\nGenerating plots...")
     fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True, gridspec_kw={'height_ratios': [4, 2, 2]})
 
