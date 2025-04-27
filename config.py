@@ -2,47 +2,48 @@
 """
 Central configuration file for Arbix Backtester
 """
+import datetime
 
 # --- API Configuration ---
-# Names of environment variables storing the API keys
-# Use LIVE keys for fetching longer history for backtesting
-LIVE_API_KEY_ENV = "BINANCE_LIVE_API_KEY"
-LIVE_API_SECRET_ENV = "BINANCE_LIVE_API_SECRET"
-# Set to True to use Testnet, False for Live API (for data fetching)
-USE_TESTNET_FOR_DATA = False # <<< Set to False to use Live API keys
+LIVE_API_KEY_ENV      = "BINANCE_LIVE_API_KEY"
+LIVE_API_SECRET_ENV   = "BINANCE_LIVE_API_SECRET"
+USE_TESTNET_FOR_DATA  = False    # Use Live API for long history
 
 # --- Data Fetching Parameters ---
-SYMBOL = 'BTCUSDT'
-INTERVAL = '4h' # Use string format recognized by python-binance Client
-# Limit for single API call (Binance default is 500, max 1000)
-# We'll handle fetching more data in chunks later if needed.
-FETCH_LIMIT = 1000
+SYMBOL               = 'DOGEUSDT'
+INTERVAL             = '4h'
+BACKTEST_START_DATE  = "1 Jan, 2021"
+BACKTEST_END_DATE    = None      # None means fetch up to now
 
 # --- Strategy Parameters ---
-# Indicator Settings
-EMA_SHORT_PERIOD = 12
-EMA_LONG_PERIOD = 26
-RSI_PERIOD = 14
-ATR_PERIOD = 14
+EMA_SHORT_PERIOD     = 20
+EMA_LONG_PERIOD      = 50
+LONG_TERM_EMA_PERIOD = 200       # New long-term trend filter
+RSI_PERIOD           = 14
+ATR_PERIOD           = 14
 
-# Strategy Thresholds/Conditions
-RSI_BUY_THRESHOLD = 55
-RSI_SELL_THRESHOLD = 45 # Currently only used for potential sell signal modification (not active)
-RSI_OVERBOUGHT = 75
+RSI_BUY_THRESHOLD    = 55
+RSI_SELL_THRESHOLD   = 45
+RSI_OVERBOUGHT       = 75
 
-# Exit Conditions
-ATR_SL_MULTIPLIER = 2.5
-ATR_TP_MULTIPLIER = 2.5 # Set back to 1:1 for now, can be tuned
+# --- ATR-based SL/TP (tighter) ---
+ATR_SL_MULTIPLIER    = 1.5       # Stop-loss = 1.5 × ATR
+ATR_TP_MULTIPLIER    = 2.0       # Take-profit = 2.0 × ATR
+
+# --- Position Sizing ---
+USE_RISK_BASED_SIZING = True     # Position size so that risk per trade is fixed %
+RISK_PCT_PER_TRADE    = 0.01     # 1% of portfolio at risk per trade
 
 # --- Backtesting Parameters ---
-INITIAL_CAPITAL = 10000.0
-TRADE_AMOUNT_USD = 1000.0 # Fixed USD amount per trade
-FEE_PERCENT = 0.001 # Taker fee (0.1%)
+INITIAL_CAPITAL      = 10000.0   # Starting USD balance
 
-# --- Column Names (used throughout modules) ---
-# These help avoid typos and make refactoring easier
-COL_EMA_SHORT = f'EMA_{EMA_SHORT_PERIOD}'
-COL_EMA_LONG = f'EMA_{EMA_LONG_PERIOD}'
-COL_RSI = f'RSI_{RSI_PERIOD}'
-COL_ATR = f'ATRr_{ATR_PERIOD}' # Default name from pandas-ta/manual calc
-COL_SIGNAL = 'Signal'
+# --- Fee & Symbol ---
+FEE_PERCENT          = 0.001     # 0.1% per trade
+
+# --- Column Names (auto-derived) ---
+COL_EMA_SHORT        = f'EMA_{EMA_SHORT_PERIOD}'
+COL_EMA_LONG         = f'EMA_{EMA_LONG_PERIOD}'
+COL_EMA_LONGTERM     = f'EMA_{LONG_TERM_EMA_PERIOD}'
+COL_RSI              = f'RSI_{RSI_PERIOD}'
+COL_ATR              = f'ATRr_{ATR_PERIOD}'
+COL_SIGNAL           = 'Signal'

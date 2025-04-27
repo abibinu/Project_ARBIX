@@ -1,45 +1,37 @@
 # strategy.py
 """
-Defines the strategy logic for generating trade signals.
+Generates entry/exit signals:
+  - Buy on EMA crossover + RSI + volatility + long-term trend filter
+  - No EMA-signal exit (we’ll only use SL/TP)
 """
 import pandas as pd
-import config # Import config for parameters and column names
+import config
 
-def generate_signals(df):
-    """Generates Buy (1) and Sell (-1) signals based on strategy rules."""
-    if df.empty:
-        print("Warning: Cannot generate signals from empty DataFrame.")
-        return df
+def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df[config.COL_SIGNAL] = 0
 
-    print("\nGenerating Buy/Sell signals based on EMA, RSI...")
-    df[config.COL_SIGNAL] = 0 # Initialize Signal column
+    short_ema = df[config.COL_EMA_SHORT]
+    long_ema  = df[config.COL_EMA_LONG]
+    lterm_ema = df[config.COL_EMA_LONGTERM]
+    rsi       = df[config.COL_RSI]
+    atr       = df[config.COL_ATR]
 
-    try:
-        # --- Buy Signal Conditions ---
-        buy_cond1 = df[config.COL_EMA_SHORT] > df[config.COL_EMA_LONG]
-        # Check previous bar for crossover to avoid triggering on stable state
-        buy_cond2 = df[config.COL_EMA_SHORT].shift(1) <= df[config.COL_EMA_LONG].shift(1)
-        buy_cond3 = df[config.COL_RSI] > config.RSI_BUY_THRESHOLD
-        buy_cond4 = df[config.COL_RSI] < config.RSI_OVERBOUGHT
-        buy_signal = buy_cond1 & buy_cond2 & buy_cond3 & buy_cond4
-        df.loc[buy_signal, config.COL_SIGNAL] = 1
+    ema_diff  = short_ema - long_ema
+    # Volatility filter: avoid extreme spikes
+    atr_avg   = atr.rolling(window=config.ATR_PERIOD, min_periods=1).mean()
+    vol_filt  = atr < (atr_avg * 1.5)
 
-        # --- Sell Signal Conditions (EMA Crossover Exit) ---
-        sell_cond1 = df[config.COL_EMA_SHORT] < df[config.COL_EMA_LONG]
-        # Check previous bar for crossover
-        sell_cond2 = df[config.COL_EMA_SHORT].shift(1) >= df[config.COL_EMA_LONG].shift(1)
-        sell_signal = sell_cond1 & sell_cond2
-        df.loc[sell_signal, config.COL_SIGNAL] = -1
+    # Entry: short EMA crosses above long EMA, RSI > threshold, price > long-term EMA, and vol ok
+    buy_mask = (
+        (ema_diff > 0) &
+        (ema_diff.shift() <= 0) &
+        (df['close'] > lterm_ema) &
+        (rsi > config.RSI_BUY_THRESHOLD) &
+        vol_filt
+    )
 
-        print("Signals generated.")
-        return df
+    df.loc[buy_mask, config.COL_SIGNAL] = 1
 
-    except KeyError as e:
-        print(f"Error generating signals: Missing expected column - {e}")
-        print("Check if indicators were calculated correctly.")
-        return df # Return original df if error
-    except Exception as e:
-        print(f"Error generating signals: {e}")
-        import traceback
-        traceback.print_exc()
-        return df
+    # We do NOT generate a -1 here; exits are only via SL/TP in backtester
+    return df

@@ -3,57 +3,47 @@
 Functions to calculate technical indicators.
 """
 import pandas as pd
-import config # Import config to potentially use column names or periods
+import config
 
-# --- Custom Indicator Functions (Moved from main script) ---
-def calculate_rsi(series, period):
-    """Calculate RSI (Relative Strength Index)"""
+def calculate_rsi(series: pd.Series, period: int) -> pd.Series:
     delta = series.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
+    gain  = delta.where(delta > 0, 0)
+    loss  = -delta.where(delta < 0, 0)
 
-    # Use rolling mean with min_periods for initial calculation
     avg_gain = gain.rolling(window=period, min_periods=period).mean()
-    avg_loss = loss.rolling(window=period, min_periods=period).mean()
+    avg_loss = loss.rolling(window=period, min_periods=period).mean().replace(0, 1e-6)
 
-    # Handle potential division by zero if avg_loss is 0
-    rs = avg_gain / avg_loss.replace(0, 0.000001) # Add small epsilon to avoid div by zero
-
+    rs  = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    # Clamp RSI values between 0 and 100 (can sometimes slightly exceed due to floating point)
-    rsi = rsi.clip(lower=0, upper=100)
-    return rsi
+    return rsi.clip(0, 100)
 
-def calculate_atr(high, low, close, period):
-    """Calculate ATR (Average True Range)"""
+def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Series:
     tr1 = high - low
-    tr2 = abs(high - close.shift())
-    tr3 = abs(low - close.shift())
-    # Use skipna=False to avoid issues if early data has NaNs
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1, skipna=False)
-    # Use rolling mean with min_periods
-    atr = tr.rolling(window=period, min_periods=period).mean()
-    return atr
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low  - close.shift()).abs()
+    tr  = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1, skipna=False)
+    return tr.rolling(window=period, min_periods=period).mean()
 
-def add_indicators(df):
-    """Calculates and adds all required indicators to the DataFrame."""
-    print("\nCalculating Technical Indicators (EMA, RSI, ATR)...")
-    try:
-        # Calculate EMAs using pandas built-in ewm
-        df[config.COL_EMA_SHORT] = df['close'].ewm(span=config.EMA_SHORT_PERIOD, adjust=False).mean()
-        df[config.COL_EMA_LONG] = df['close'].ewm(span=config.EMA_LONG_PERIOD, adjust=False).mean()
+def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculates and adds:
+      - Short & long EMAs
+      - Long-term EMA (trend filter)
+      - RSI
+      - ATR
+    """
+    print("\nCalculating indicators...")
+    df = df.copy()
 
-        # Calculate RSI using custom function
-        df[config.COL_RSI] = calculate_rsi(df['close'], config.RSI_PERIOD)
+    # EMAs
+    df[config.COL_EMA_SHORT]    = df['close'].ewm(span=config.EMA_SHORT_PERIOD, adjust=False).mean()
+    df[config.COL_EMA_LONG]     = df['close'].ewm(span=config.EMA_LONG_PERIOD,  adjust=False).mean()
+    df[config.COL_EMA_LONGTERM] = df['close'].ewm(span=config.LONG_TERM_EMA_PERIOD,
+                                                 adjust=False).mean()
 
-        # Calculate ATR using custom function
-        df[config.COL_ATR] = calculate_atr(df['high'], df['low'], df['close'], config.ATR_PERIOD)
+    # RSI & ATR
+    df[config.COL_RSI] = calculate_rsi(df['close'], config.RSI_PERIOD)
+    df[config.COL_ATR] = calculate_atr(df['high'], df['low'], df['close'], config.ATR_PERIOD)
 
-        print("Indicators calculated.")
-        return df.dropna() # Return DataFrame after dropping NaN rows
-
-    except Exception as e:
-        print(f"Error calculating indicators: {e}")
-        import traceback
-        traceback.print_exc()
-        return pd.DataFrame() # Return empty on error
+    # Drop initial NaNs
+    return df.dropna()
