@@ -22,13 +22,26 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
     atr_avg   = atr.rolling(window=config.ATR_PERIOD, min_periods=1).mean()
     vol_filt  = atr < (atr_avg * 1.5)
 
+    volume_increase = df['volume'] > df['volume'].rolling(window=5).mean() * 1.2
+
+    recent_highs = df['high'].rolling(window=20).max()
+    recent_lows = df['low'].rolling(window=20).min()
+    price_near_support = df['close'] < recent_lows * 1.05  # Within 5% of recent low
+
+    macd = df['close'].ewm(span=12).mean() - df['close'].ewm(span=26).mean()
+    macd_signal = macd.ewm(span=9).mean()
+    macd_hist = macd - macd_signal
+    macd_increasing = macd_hist > macd_hist.shift(1)
+
     # Entry: short EMA crosses above long EMA, RSI > threshold, price > long-term EMA, and vol ok
     buy_mask = (
         (ema_diff > 0) &
         (ema_diff.shift() <= 0) &
         (df['close'] > lterm_ema) &
         (rsi > config.RSI_BUY_THRESHOLD) &
-        vol_filt
+        vol_filt &
+        volume_increase &  # Volume confirmation
+        macd_increasing    # Momentum confirmation
     )
 
     df.loc[buy_mask, config.COL_SIGNAL] = 1

@@ -49,7 +49,11 @@ def calculate_metrics(final_value, initial_capital, trades_df, portfolio_values,
         # Calculate Max Drawdown
         if portfolio_values and not df_index.empty:
             portfolio_index = df_index.copy()
-            portfolio_index = portfolio_index.append(pd.Index([portfolio_index[-1] + pd.Timedelta(seconds=1)]))
+            # Ensure last index is a Timestamp before adding Timedelta
+            last_index = portfolio_index[-1]
+            if not isinstance(last_index, pd.Timestamp):
+                last_index = pd.to_datetime(last_index)
+            portfolio_index = portfolio_index.append(pd.Index([last_index + pd.Timedelta(seconds=1)]))
 
             if len(portfolio_values) == len(portfolio_index):
                 portfolio_series = pd.Series(portfolio_values, index=portfolio_index)
@@ -124,6 +128,15 @@ def plot_results(df, portfolio_values, trades_df):
         # --- Plot 3: Equity Curve ---
         if portfolio_values:
              portfolio_index = df.index.copy()
+             
+             # Ensure portfolio_index is a DatetimeIndex
+             if not isinstance(portfolio_index, pd.DatetimeIndex):
+                 try:
+                     portfolio_index = pd.to_datetime(portfolio_index)
+                 except Exception:
+                     # Fallback: create a datetime index based on current time
+                     portfolio_index = pd.Index([pd.Timestamp.now() + pd.Timedelta(seconds=i) for i in range(len(portfolio_values))])
+             
              if not portfolio_index.empty:
                   portfolio_index = portfolio_index.append(pd.Index([portfolio_index[-1] + pd.Timedelta(seconds=1)]))
              else: 
