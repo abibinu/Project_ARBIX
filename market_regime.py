@@ -57,17 +57,20 @@ class MarketRegimeDetector:
         # Calculate strong trend threshold
         strong_trend_threshold = df['r_squared'].quantile(0.75)
         
-        # Ensure low_vol_threshold is numeric
-        low_vol_threshold = pd.to_numeric(low_vol_threshold, errors='coerce')
+        # Add volatility as a column to ensure proper alignment
+        df['volatility'] = volatility
         
-        # Identify regimes
+        # Identify regimes using properly aligned data
         df.loc[(df['r_squared'] > strong_trend_threshold) & (df['trend_strength'] > 0), 'regime'] = 'uptrend'
         df.loc[(df['r_squared'] > strong_trend_threshold) & (df['trend_strength'] < 0), 'regime'] = 'downtrend'
-        df.loc[volatility.index[volatility > high_vol_threshold], 'regime'] = 'volatile'
-        df.loc[(df['r_squared'] < 0.3) & (volatility <= low_vol_threshold), 'regime'] = 'ranging'
+        df.loc[df['volatility'] > high_vol_threshold, 'regime'] = 'volatile'
+        df.loc[(df['r_squared'] < 0.3) & (df['volatility'] <= low_vol_threshold), 'regime'] = 'ranging'
         
         # For any remaining 'unknown', classify as normal
         df.loc[df['regime'] == 'unknown', 'regime'] = 'normal'
+        
+        # Drop the temporary volatility column
+        df = df.drop('volatility', axis=1)
         
         return df
     

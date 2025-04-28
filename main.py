@@ -46,26 +46,37 @@ def run_enhanced():
         print("Stopping execution: DataFrame empty after indicator calculation.")
         return
 
+    # Train ML Model and get predictions before regime detection
+    print("\nTraining ML model for signal enhancement...")
+    ml_model = MLPredictor()
+    training_accuracy = ml_model.train(df_with_indicators)
+    
+    # Get ML predictions
+    buy_probabilities = ml_model.predict(df_with_indicators)
+    df_with_indicators['ml_buy_prob'] = buy_probabilities
+
     # 4. Detect Market Regimes
     print("\nDetecting market regimes...")
     regime_detector = MarketRegimeDetector(window_size=30)
     df_with_regimes = regime_detector.detect_regime(df_with_indicators)
     
-    # Ensure consistent indices before merging
-    df_with_indicators = df_with_indicators.reset_index()
-    df_with_regimes = df_with_regimes.reset_index()
+    # Ensure all timestamps are datetime type
+    df_with_indicators.index = pd.to_datetime(df_with_indicators.index)
+    df_with_regimes.index = pd.to_datetime(df_with_regimes.index)
+    
+    # Save the index name for later restoration
+    index_name = df_with_regimes.index.name or 'timestamp'
 
-    # Ensure 'ml_buy_prob' exists in df_with_indicators before merging
+    # Merge ml_buy_prob with regimes using concat on the datetime index
     if 'ml_buy_prob' in df_with_indicators.columns:
-        df_with_regimes = df_with_regimes.merge(
-            df_with_indicators[['index', 'ml_buy_prob']],
-            on='index',
-            how='left'
-        )
-        # Fill missing values in ml_buy_prob
+        df_with_regimes = pd.concat([
+            df_with_regimes,
+            df_with_indicators[['ml_buy_prob']]
+        ], axis=1)
         df_with_regimes['ml_buy_prob'] = df_with_regimes['ml_buy_prob'].fillna(0)
     else:
-        print("Warning: 'ml_buy_prob' column not found in df_with_indicators. Skipping merge.")
+        print("Warning: 'ml_buy_prob' column not found in df_with_indicators. Check ML model.")
+        return
     
     # Print regime distribution
     regime_counts = df_with_regimes['regime'].value_counts()
@@ -92,16 +103,7 @@ def run_enhanced():
         setattr(config, param, value)
     """
     
-    # 6. Train ML Model
-    print("\nTraining ML model for signal enhancement...")
-    ml_model = MLPredictor()
-    training_accuracy = ml_model.train(df_with_indicators)
-    
-    # Get ML predictions
-    buy_probabilities = ml_model.predict(df_with_indicators)
-    df_with_indicators['ml_buy_prob'] = buy_probabilities
-    
-    # 7. Generate Signals (with ML enhancement)
+    # 6. Generate Signals (with ML enhancement)
     print("\nGenerating trading signals...")
     df_with_signals = strategy.generate_signals(df_with_indicators)
     
@@ -109,37 +111,39 @@ def run_enhanced():
     if 'ml_buy_prob' in df_with_indicators.columns:
         df_with_signals.loc[df_with_indicators['ml_buy_prob'] < 0.6, config.COL_SIGNAL] = 0
         
-    # 8. Adjust signals based on market regime
-    # Merge df_with_regimes and ml_buy_prob to ensure 'ml_buy_prob' is accessible
+    # 7. Adjust signals based on market regime
     df_regimes_with_prob = df_with_regimes.copy()
+    
+    # Use consistent concat-based approach for merging
     if 'ml_buy_prob' in df_with_indicators.columns:
-        df_regimes_with_prob = df_with_regimes.merge(
-            df_with_indicators[['ml_buy_prob']],
-            left_index=True,
-            right_index=True,
-            how='left'
-        )
+        df_regimes_with_prob = pd.concat([
+            df_regimes_with_prob,
+            df_with_indicators[['ml_buy_prob']]
+        ], axis=1)
         df_regimes_with_prob['ml_buy_prob'] = df_regimes_with_prob['ml_buy_prob'].fillna(0)
     
+    # Apply regime-based signal adjustments
     for i, row in df_regimes_with_prob.iterrows():
         regime = row['regime']
+        # Use iloc[0] to get the scalar value if it's a Series
+        ml_prob = row['ml_buy_prob'].iloc[0] if isinstance(row['ml_buy_prob'], pd.Series) else row['ml_buy_prob']
         
         # Skip signals in downtrends
         if regime == 'downtrend':
             df_with_signals.loc[i, config.COL_SIGNAL] = 0
             
         # Be more selective in volatile markets
-        elif regime == 'volatile' and row['ml_buy_prob'] < 0.7:
+        elif regime == 'volatile' and ml_prob < 0.7:
             df_with_signals.loc[i, config.COL_SIGNAL] = 0
     
-    # 9. Run Backtest Simulation with Risk Management
+    # 8. Run Backtest Simulation with Risk Management
     print("\nRunning backtest with enhanced risk management...")
     risk_manager = RiskManager(config.INITIAL_CAPITAL, risk_pct=config.RISK_PCT_PER_TRADE)
     
     # Replace standard backtest with risk-managed version
     final_value, trades_df, portfolio_values = backtester.run_backtest(df_with_signals)
 
-    # 10. Calculate & Print Metrics / Generate Plots
+    # 9. Calculate & Print Metrics / Generate Plots
     if portfolio_values:
         reporting.calculate_metrics(
             final_value,

@@ -31,6 +31,9 @@ class RiskManager:
         if self.drawdown_level > 0.05:  # 5% drawdown
             self.in_drawdown = True
         
+        # Add a log for drawdown level
+        print(f"Current drawdown level: {self.drawdown_level:.2%}")
+        
         return self.in_drawdown, self.drawdown_level
     
     def record_trade(self, trade_result):

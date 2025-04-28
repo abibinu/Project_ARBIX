@@ -12,7 +12,7 @@ USE_TESTNET_FOR_DATA  = False    # Use Live API for long history
 # --- Data Fetching Parameters ---
 SYMBOL               = 'DOGEUSDT'
 INTERVAL             = '4h'
-BACKTEST_START_DATE  = "1 Jan, 2021"
+BACKTEST_START_DATE  = "1 Jan, 2024"
 BACKTEST_END_DATE    = None      # None means fetch up to now
 
 # --- Strategy Parameters ---
