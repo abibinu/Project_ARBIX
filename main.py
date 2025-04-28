@@ -51,11 +51,21 @@ def run_enhanced():
     regime_detector = MarketRegimeDetector(window_size=30)
     df_with_regimes = regime_detector.detect_regime(df_with_indicators)
     
-    # Merge ml_buy_prob into df_with_regimes to avoid KeyError
+    # Ensure consistent indices before merging
+    df_with_indicators = df_with_indicators.reset_index()
+    df_with_regimes = df_with_regimes.reset_index()
+
+    # Ensure 'ml_buy_prob' exists in df_with_indicators before merging
     if 'ml_buy_prob' in df_with_indicators.columns:
-        df_with_regimes = df_with_regimes.join(df_with_indicators['ml_buy_prob'], how='left')
-        # Fill missing ml_buy_prob with 0 to avoid KeyError in loop
+        df_with_regimes = df_with_regimes.merge(
+            df_with_indicators[['index', 'ml_buy_prob']],
+            on='index',
+            how='left'
+        )
+        # Fill missing values in ml_buy_prob
         df_with_regimes['ml_buy_prob'] = df_with_regimes['ml_buy_prob'].fillna(0)
+    else:
+        print("Warning: 'ml_buy_prob' column not found in df_with_indicators. Skipping merge.")
     
     # Print regime distribution
     regime_counts = df_with_regimes['regime'].value_counts()

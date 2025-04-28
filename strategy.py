@@ -1,8 +1,8 @@
 # strategy.py
 """
 Generates entry/exit signals:
-  - Buy on EMA crossover + RSI + volatility + long-term trend filter
-  - No EMA-signal exit (we’ll only use SL/TP)
+  - Buy on EMA crossover + RSI confirmation
+  - Sell on EMA crossover in the opposite direction + RSI confirmation
 """
 import pandas as pd
 import config
@@ -12,39 +12,52 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
     df[config.COL_SIGNAL] = 0
 
     short_ema = df[config.COL_EMA_SHORT]
-    long_ema  = df[config.COL_EMA_LONG]
-    lterm_ema = df[config.COL_EMA_LONGTERM]
-    rsi       = df[config.COL_RSI]
-    atr       = df[config.COL_ATR]
+    long_ema = df[config.COL_EMA_LONG]
+    rsi = df[config.COL_RSI]
 
-    ema_diff  = short_ema - long_ema
-    # Volatility filter: avoid extreme spikes
-    atr_avg   = atr.rolling(window=config.ATR_PERIOD, min_periods=1).mean()
-    vol_filt  = atr < (atr_avg * 1.5)
-
-    volume_increase = df['volume'] > df['volume'].rolling(window=5).mean() * 1.2
-
-    recent_highs = df['high'].rolling(window=20).max()
-    recent_lows = df['low'].rolling(window=20).min()
-    price_near_support = df['close'] < recent_lows * 1.05  # Within 5% of recent low
-
-    macd = df['close'].ewm(span=12).mean() - df['close'].ewm(span=26).mean()
-    macd_signal = macd.ewm(span=9).mean()
-    macd_hist = macd - macd_signal
-    macd_increasing = macd_hist > macd_hist.shift(1)
-
-    # Entry: short EMA crosses above long EMA, RSI > threshold, price > long-term EMA, and vol ok
+    # Simplified entry condition: EMA crossover and RSI confirmation
     buy_mask = (
-        (ema_diff > 0) &
-        (ema_diff.shift() <= 0) &
-        (df['close'] > lterm_ema) &
-        (rsi > config.RSI_BUY_THRESHOLD) &
-        vol_filt &
-        volume_increase &  # Volume confirmation
-        macd_increasing    # Momentum confirmation
+        (short_ema > long_ema) &
+        (rsi > config.RSI_BUY_THRESHOLD)
     )
 
     df.loc[buy_mask, config.COL_SIGNAL] = 1
 
-    # We do NOT generate a -1 here; exits are only via SL/TP in backtester
+    # Simplified exit condition: EMA crossover in the opposite direction
+    sell_mask = (
+        (short_ema < long_ema) &
+        (rsi < config.RSI_SELL_THRESHOLD)
+    )
+
+    df.loc[sell_mask, config.COL_SIGNAL] = -1
+
+    return df
+
+def generate_signals_with_config(df: pd.DataFrame, config) -> pd.DataFrame:
+    """
+    Generates signals based on a given configuration.
+    """
+    df = df.copy()
+    df[config.COL_SIGNAL] = 0
+
+    short_ema = df[config.COL_EMA_SHORT]
+    long_ema = df[config.COL_EMA_LONG]
+    rsi = df[config.COL_RSI]
+
+    # Entry condition: EMA crossover and RSI confirmation
+    buy_mask = (
+        (short_ema > long_ema) &
+        (rsi > config.RSI_BUY_THRESHOLD)
+    )
+
+    df.loc[buy_mask, config.COL_SIGNAL] = 1
+
+    # Exit condition: EMA crossover in the opposite direction
+    sell_mask = (
+        (short_ema < long_ema) &
+        (rsi < config.RSI_SELL_THRESHOLD)
+    )
+
+    df.loc[sell_mask, config.COL_SIGNAL] = -1
+
     return df

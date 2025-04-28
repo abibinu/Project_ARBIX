@@ -47,3 +47,21 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     # Drop initial NaNs
     return df.dropna()
+
+def add_indicators_with_config(df: pd.DataFrame, config) -> pd.DataFrame:
+    """
+    Calculates and adds indicators based on a given configuration.
+    """
+    df = df.copy()
+
+    # EMAs
+    df[config.COL_EMA_SHORT] = df['close'].ewm(span=config.EMA_SHORT_PERIOD, adjust=False).mean()
+    df[config.COL_EMA_LONG] = df['close'].ewm(span=config.EMA_LONG_PERIOD, adjust=False).mean()
+    df[config.COL_EMA_LONGTERM] = df['close'].ewm(span=config.LONG_TERM_EMA_PERIOD, adjust=False).mean()
+
+    # RSI & ATR
+    df[config.COL_RSI] = calculate_rsi(df['close'], config.RSI_PERIOD)
+    df[config.COL_ATR] = calculate_atr(df['high'], df['low'], df['close'], config.ATR_PERIOD)
+
+    # Drop initial NaNs
+    return df.dropna()
