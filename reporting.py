@@ -83,8 +83,13 @@ def plot_results(df, portfolio_values, trades_df):
 
     print("\nGenerating plots...")
     try:
-        fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True, gridspec_kw={'height_ratios': [4, 2, 2]})
+        # Ensure the index is datetime
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
 
+        # Create figure with proper spacing
+        fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True, gridspec_kw={'height_ratios': [4, 2, 2]})
+        
         # --- Plot 1: Price, EMAs, Trade Signals ---
         axes[0].plot(df.index, df['close'], label='Close Price', color='blue', alpha=0.6, linewidth=1)
         axes[0].plot(df.index, df[config.COL_EMA_SHORT], label=f'{config.EMA_SHORT_PERIOD}-P EMA', color='orange', linewidth=1.5)
@@ -92,6 +97,10 @@ def plot_results(df, portfolio_values, trades_df):
 
         # Plot markers only if trades exist
         if not trades_df.empty:
+            # Ensure trades_df index is datetime
+            if not isinstance(trades_df.index, pd.DatetimeIndex):
+                trades_df.index = pd.to_datetime(trades_df.index)
+                
             valid_timestamps = df.index.intersection(trades_df.index)
             filtered_trades = trades_df.loc[valid_timestamps]
 
@@ -101,13 +110,21 @@ def plot_results(df, portfolio_values, trades_df):
             take_profit_markers = filtered_trades[filtered_trades['Type'] == 'TAKE_PROFIT']
 
             if not buy_markers.empty:
-                axes[0].scatter(buy_markers.index, df.loc[buy_markers.index]['close'], label='Buy', marker='^', color='lime', s=100, alpha=1, zorder=5, edgecolors='black', linewidth=0.5)
+                axes[0].scatter(buy_markers.index, df.loc[buy_markers.index]['close'], 
+                              label='Buy', marker='^', color='lime', s=100, alpha=1, 
+                              zorder=5, edgecolors='black', linewidth=0.5)
             if not sell_ema_markers.empty:
-                axes[0].scatter(sell_ema_markers.index, df.loc[sell_ema_markers.index]['close'], label='Sell (EMA)', marker='v', color='red', s=100, alpha=1, zorder=5, edgecolors='black', linewidth=0.5)
+                axes[0].scatter(sell_ema_markers.index, df.loc[sell_ema_markers.index]['close'], 
+                              label='Sell (EMA)', marker='v', color='red', s=100, alpha=1, 
+                              zorder=5, edgecolors='black', linewidth=0.5)
             if not stop_loss_markers.empty:
-                axes[0].scatter(stop_loss_markers.index, df.loc[stop_loss_markers.index]['low'], label='Stop Loss', marker='x', color='magenta', s=120, alpha=1, zorder=5, linewidth=1.5)
+                axes[0].scatter(stop_loss_markers.index, df.loc[stop_loss_markers.index]['low'], 
+                              label='Stop Loss', marker='x', color='magenta', s=120, alpha=1, 
+                              zorder=5, linewidth=1.5)
             if not take_profit_markers.empty:
-                axes[0].scatter(take_profit_markers.index, df.loc[take_profit_markers.index]['high'], label='Take Profit', marker='*', color='cyan', s=150, alpha=1, zorder=5, edgecolors='black', linewidth=0.5)
+                axes[0].scatter(take_profit_markers.index, df.loc[take_profit_markers.index]['high'], 
+                              label='Take Profit', marker='*', color='cyan', s=150, alpha=1, 
+                              zorder=5, edgecolors='black', linewidth=0.5)
 
         axes[0].set_title(f'{config.SYMBOL} ({config.INTERVAL}) EMA/RSI/ATR Strategy')
         axes[0].set_ylabel('Price (USDT)')
@@ -118,49 +135,48 @@ def plot_results(df, portfolio_values, trades_df):
         axes[1].plot(df.index, df[config.COL_RSI], label=f'RSI ({config.RSI_PERIOD})', color='purple', linewidth=1)
         axes[1].axhline(config.RSI_OVERBOUGHT, color='red', linestyle='--', linewidth=1, label=f'OB ({config.RSI_OVERBOUGHT})')
         axes[1].axhline(config.RSI_BUY_THRESHOLD, color='blue', linestyle=':', linewidth=1, label=f'Buy Thresh ({config.RSI_BUY_THRESHOLD})')
-        axes[1].axhline(config.RSI_SELL_THRESHOLD, color='blue', linestyle=':', linewidth=1, label=f'Sell Thresh ({config.RSI_SELL_THRESHOLD})') # Optional
+        axes[1].axhline(config.RSI_SELL_THRESHOLD, color='blue', linestyle=':', linewidth=1, label=f'Sell Thresh ({config.RSI_SELL_THRESHOLD})')
         axes[1].axhline(30, color='green', linestyle='--', linewidth=1, label='OS (30)')
         axes[1].set_title('Relative Strength Index (RSI)')
         axes[1].set_ylabel('RSI Value')
+        axes[1].set_ylim(0, 100)  # Set RSI plot limits
         axes[1].legend(loc='upper left')
         axes[1].grid(True)
 
         # --- Plot 3: Equity Curve ---
-        if portfolio_values:
-             portfolio_index = df.index.copy()
-             
-             # Ensure portfolio_index is a DatetimeIndex
-             if not isinstance(portfolio_index, pd.DatetimeIndex):
-                 try:
-                     portfolio_index = pd.to_datetime(portfolio_index)
-                 except Exception:
-                     # Fallback: create a datetime index based on current time
-                     portfolio_index = pd.Index([pd.Timestamp.now() + pd.Timedelta(seconds=i) for i in range(len(portfolio_values))])
-             
-             if not portfolio_index.empty:
-                  portfolio_index = portfolio_index.append(pd.Index([portfolio_index[-1] + pd.Timedelta(seconds=1)]))
-             else: 
-                 portfolio_index = pd.Index([pd.Timestamp.now() + pd.Timedelta(seconds=i) for i in range(len(portfolio_values))])
+        if portfolio_values and len(portfolio_values) > 0:
+            # Ensure portfolio values length matches the DataFrame index length
+            if len(portfolio_values) > len(df.index):
+                # Trim excess values if portfolio_values is longer
+                portfolio_values = portfolio_values[:len(df.index)]
+            elif len(portfolio_values) < len(df.index):
+                # Extend portfolio values with the last value if shorter
+                last_value = portfolio_values[-1]
+                portfolio_values.extend([last_value] * (len(df.index) - len(portfolio_values)))
 
-             if len(portfolio_values) == len(portfolio_index):
-                  portfolio_series = pd.Series(portfolio_values, index=portfolio_index)
-                  axes[2].plot(portfolio_series.index, portfolio_series, label='Portfolio Value', color='green')
-             else:
-                  axes[2].text(0.5, 0.5, 'Plot Error: PV/Index Length Mismatch', ha='center', va='center', transform=axes[2].transAxes)
-
-        else: 
+            # Create portfolio Series with matched lengths
+            portfolio_series = pd.Series(portfolio_values, index=df.index)
+            axes[2].plot(portfolio_series.index, portfolio_series, label='Portfolio Value', color='green')
+            axes[2].set_title('Equity Curve')
+            axes[2].set_ylabel('Portfolio Value (USDT)')
+        else:
             axes[2].text(0.5, 0.5, 'No Trades or Data for Equity Curve', ha='center', va='center', transform=axes[2].transAxes)
 
-        axes[2].set_title('Equity Curve')
-        axes[2].set_ylabel('Portfolio Value (USDT)')
-        axes[2].set_xlabel('Timestamp')
-        axes[2].grid(True)
-        axes[2].legend(loc='upper left')
-
         # --- Final Plot Adjustments ---
-        fig.autofmt_xdate() 
-        plt.tight_layout(rect=[0, 0.03, 1, 0.97]) 
-        plt.suptitle(f'Backtest Results: {config.SYMBOL} ({config.INTERVAL})', fontsize=14)
+        # Rotate and align the tick labels so they look better
+        for ax in axes:
+            ax.tick_params(axis='x', rotation=45)
+            
+        # Use AutoDateFormatter for better date display
+        from matplotlib.dates import AutoDateFormatter, AutoDateLocator
+        locator = AutoDateLocator()
+        formatter = AutoDateFormatter(locator)
+        axes[2].xaxis.set_major_locator(locator)
+        axes[2].xaxis.set_major_formatter(formatter)
+
+        # Adjust layout to prevent label cutoff
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.suptitle(f'Backtest Results: {config.SYMBOL} ({config.INTERVAL})', fontsize=14, y=0.98)
         plt.show()
 
     except Exception as e:
