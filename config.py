@@ -11,8 +11,8 @@ USE_TESTNET_FOR_DATA  = False    # Use Live API for long history
 
 # --- Data Fetching Parameters ---
 SYMBOL               = 'DOGEUSDT'
-INTERVAL             = '4h'
-BACKTEST_START_DATE  = "1 Jan, 2024"
+INTERVAL             = '4h'       # Optimal timeframe
+BACKTEST_START_DATE  = "1 Jan, 2021"
 BACKTEST_END_DATE    = None      # None means fetch up to now
 
 # --- Strategy Parameters ---
@@ -26,13 +26,13 @@ RSI_BUY_THRESHOLD    = 55
 RSI_SELL_THRESHOLD   = 45
 RSI_OVERBOUGHT       = 75
 
-# --- ATR-based SL/TP (tighter) ---
-ATR_SL_MULTIPLIER    = 1.5       # Stop-loss = 1.5 × ATR
-ATR_TP_MULTIPLIER    = 2.0       # Take-profit = 2.0 × ATR
+# --- ATR-based SL/TP (optimal configuration) ---
+ATR_SL_MULTIPLIER    = 1.5       # Best performing stop loss
+ATR_TP_MULTIPLIER    = 2.0       # Best performing take profit
 
 # --- Position Sizing ---
-USE_RISK_BASED_SIZING = True     # Position size so that risk per trade is fixed %
-RISK_PCT_PER_TRADE    = 0.01     # 1% of portfolio at risk per trade
+USE_RISK_BASED_SIZING = True     
+RISK_PCT_PER_TRADE    = 0.02     # Optimal risk per trade (2%)
 
 # --- Backtesting Parameters ---
 INITIAL_CAPITAL      = 10000.0   # Starting USD balance

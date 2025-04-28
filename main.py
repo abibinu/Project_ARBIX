@@ -183,4 +183,4 @@ if __name__ == "__main__":
         print("\n--- Traceback ---")
         traceback.print_exc()
 
-    print("\nEnhanced main script finished.")
+    print("\nExiting ARBIX (by ABI)")
