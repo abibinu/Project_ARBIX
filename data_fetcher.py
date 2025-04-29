@@ -58,16 +58,11 @@ def get_binance_client():
             else:
                 client = Client(api_key, api_secret, testnet=config.USE_TESTNET)
 
-        # Test connection and API key validity
-        try:
-            # Try to get account info as this requires valid API keys
-            client.get_account()
-            api_type = "Testnet" if config.USE_TESTNET else "Live API"
-            print(f"Successfully connected to Binance {api_type}")
-            return client
-        except Exception as api_error:
-            print(f"Error validating API keys: {api_error}")
-            return None
+        # Test connection
+        client.ping()
+        api_type = "Testnet" if config.USE_TESTNET else "Live API"
+        print(f"Successfully connected to Binance {api_type}")
+        return client
 
     except Exception as e:
         api_type = "Testnet" if config.USE_TESTNET else "Live API"
