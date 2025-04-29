@@ -60,13 +60,13 @@ class RiskManager:
         risk_amount = self.portfolio_value * self.risk_pct
         
         # Risk adjustment based on drawdown
-        if self.drawdown_level > 0.1:  # 10% drawdown
+        if self.drawdown_level > 0.15:  # Increased from 0.1
             risk_amount *= 0.5  # Reduce risk by half
-        elif self.drawdown_level > 0.05:  # 5% drawdown
+        elif self.drawdown_level > 0.10:  # Increased from 0.05
             risk_amount *= 0.75  # Reduce risk by 25%
             
         # Risk reduction after consecutive losses
-        if self.consecutive_losses >= 3:
+        if self.consecutive_losses >= 2:  # Reduced from 3 for tighter control
             risk_amount *= 0.5  # Reduce risk by half after 3 consecutive losses
             
         # Calculate position size
@@ -84,16 +84,16 @@ class RiskManager:
         
         market_condition: 'normal', 'volatile', 'trending'
         """
-        # No trading during large drawdowns
-        if self.drawdown_level > 0.2:  # 20% drawdown
+        # No trading during extreme drawdowns
+        if self.drawdown_level > 0.25:  # Increased from 0.2 to 0.25
             return False
             
         # Reduce trading frequency after consecutive losses
-        if self.consecutive_losses >= 5:
+        if self.consecutive_losses >= 3:  # Reduced from 5 to 3 for tighter control
             return False
             
         # Market-specific adjustments
-        if market_condition == 'volatile' and self.drawdown_level > 0.1:
+        if market_condition == 'volatile' and self.drawdown_level > 0.15:  # Increased from 0.1
             return False
             
         return True

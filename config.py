@@ -7,13 +7,16 @@ import datetime
 # --- API Configuration ---
 LIVE_API_KEY_ENV      = "BINANCE_LIVE_API_KEY"
 LIVE_API_SECRET_ENV   = "BINANCE_LIVE_API_SECRET"
-USE_TESTNET_FOR_DATA  = False    # Use Live API for long history
+TESTNET_API_KEY_ENV   = "BINANCE_TESTNET_API_KEY"
+TESTNET_API_SECRET_ENV = "BINANCE_TESTNET_API_SECRET"
+USE_TESTNET = False    # Set to False for live trading
+USE_TESTNET_FOR_DATA  = False    # Use Live API for data
 
-# --- Data Fetching Parameters ---
-SYMBOL               = 'DOGEUSDT'
-INTERVAL             = '4h'       # Optimal timeframe
-BACKTEST_START_DATE  = "1 Jan, 2021"
-BACKTEST_END_DATE    = None      # None means fetch up to now
+# --- Trading Parameters ---
+SYMBOL               = 'DOGEUSDT'  # Trading pair
+INTERVAL             = '1h'        # Timeframe
+BACKTEST_START_DATE  = "1 Jan, 2024"
+BACKTEST_END_DATE    = None       # None means fetch up to now
 
 # --- Strategy Parameters ---
 EMA_SHORT_PERIOD     = 20
@@ -30,12 +33,11 @@ RSI_OVERBOUGHT       = 75
 ATR_SL_MULTIPLIER    = 1.5       # Best performing stop loss
 ATR_TP_MULTIPLIER    = 2.0       # Best performing take profit
 
-# --- Position Sizing ---
+# --- Risk Management ---
+INITIAL_CAPITAL      = 100.0      # Starting with conservative amount
 USE_RISK_BASED_SIZING = True     
-RISK_PCT_PER_TRADE    = 0.02     # Optimal risk per trade (2%)
-
-# --- Backtesting Parameters ---
-INITIAL_CAPITAL      = 10000.0   # Starting USD balance
+RISK_PCT_PER_TRADE    = 0.01     # Reduced to 1% risk per trade for live
+MAX_TRADES = 1                    # Maximum concurrent trades
 
 # --- Fee & Symbol ---
 FEE_PERCENT          = 0.001     # 0.1% per trade

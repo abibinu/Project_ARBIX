@@ -6,10 +6,19 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
+from sklearn.utils import class_weight
+import config  # Add missing import
+import indicators  # Import at the top level
 
 class MLPredictor:
     def __init__(self):
-        self.model = RandomForestClassifier(n_estimators=100, random_state=42)
+        # Use balanced subsample to handle class imbalance
+        self.model = RandomForestClassifier(
+            n_estimators=100,
+            random_state=42,
+            class_weight='balanced_subsample',
+            min_samples_leaf=5  # Ensure minimum samples per leaf
+        )
         self.scaler = StandardScaler()
         self.is_trained = False
         
@@ -19,21 +28,24 @@ class MLPredictor:
         """
         df = df.copy()
         
+        # Add technical indicators first
+        df = indicators.add_indicators(df)
+        
         # Technical indicator features
         features = []
         
         # 1. EMA-based features
-        df['ema_ratio'] = df['EMA_20'] / df['EMA_50']
-        df['ema_diff'] = df['EMA_20'] - df['EMA_50']
+        df['ema_ratio'] = df[config.COL_EMA_SHORT] / df[config.COL_EMA_LONG]
+        df['ema_diff'] = df[config.COL_EMA_SHORT] - df[config.COL_EMA_LONG]
         df['ema_diff_pct'] = df['ema_diff'] / df['close'] * 100
         
         # 2. RSI features
-        df['rsi_diff'] = df['RSI_14'] - df['RSI_14'].shift(1)
-        df['rsi_ma'] = df['RSI_14'].rolling(5).mean()
-        df['rsi_trend'] = df['RSI_14'] - df['rsi_ma']
+        df['rsi_diff'] = df[config.COL_RSI] - df[config.COL_RSI].shift(1)
+        df['rsi_ma'] = df[config.COL_RSI].rolling(5).mean()
+        df['rsi_trend'] = df[config.COL_RSI] - df['rsi_ma']
         
         # 3. Price action features
-        df['price_to_ema_ratio'] = df['close'] / df['EMA_200']
+        df['price_to_ema_ratio'] = df['close'] / df[config.COL_EMA_LONGTERM]
         df['range_pct'] = (df['high'] - df['low']) / df['close'] * 100
         df['body_pct'] = abs(df['close'] - df['open']) / (df['high'] - df['low']) * 100
         
@@ -49,21 +61,21 @@ class MLPredictor:
         for i in range(1, len(df)):
             if df['close'].iloc[i] > df['close'].iloc[i-1]:
                 streak = max(0, streak) + 1
-                df.loc[i, 'up_streak'] = streak
-                df.loc[i, 'down_streak'] = 0
+                df.iloc[i, df.columns.get_loc('up_streak')] = streak
+                df.iloc[i, df.columns.get_loc('down_streak')] = 0
             elif df['close'].iloc[i] < df['close'].iloc[i-1]:
                 streak = min(0, streak) - 1
-                df.loc[i, 'down_streak'] = abs(streak)
-                df.loc[i, 'up_streak'] = 0
+                df.iloc[i, df.columns.get_loc('down_streak')] = abs(streak)
+                df.iloc[i, df.columns.get_loc('up_streak')] = 0
             else:
-                df.loc[i, 'up_streak'] = df.loc[i-1, 'up_streak']
-                df.loc[i, 'down_streak'] = df.loc[i-1, 'down_streak']
+                df.iloc[i, df.columns.get_loc('up_streak')] = df.iloc[i-1, df.columns.get_loc('up_streak')]
+                df.iloc[i, df.columns.get_loc('down_streak')] = df.iloc[i-1, df.columns.get_loc('down_streak')]
         
         # List of features to use
         feature_columns = [
             'ema_ratio', 'ema_diff_pct', 'rsi_diff', 'rsi_trend',
             'price_to_ema_ratio', 'range_pct', 'body_pct',
-            'volume_ratio', 'up_streak', 'down_streak', 'RSI_14'
+            'volume_ratio', 'up_streak', 'down_streak', config.COL_RSI
         ]
         
         return df[feature_columns].copy()
@@ -86,38 +98,56 @@ class MLPredictor:
         return df['label']
     
     def train(self, df, test_size=0.3):
-        """
-        Train the machine learning model
-        """
+        """Train the machine learning model with improved class handling"""
+        df = df.copy()
+        
         # Prepare features and labels
         X = self.prepare_features(df)
         y = self.prepare_labels(df)
         
+        # Ensure X and y have the same index
+        common_index = X.index.intersection(y.index)
+        X = X.loc[common_index]
+        y = y.loc[common_index]
+        
         # Drop rows with NaN
-        # Fix warning by aligning indices and ensuring boolean masks are compatible
-        y_na = y.isna()
-        y_na = y_na.reindex(X.index, fill_value=False)
-        valid_idx = ~(X.isna().any(axis=1) | y_na)
+        valid_idx = ~(X.isna().any(axis=1) | y.isna())
         X = X[valid_idx]
         y = y[valid_idx]
         
+        if len(X) < 100:
+            print("Warning: Not enough valid data points for training")
+            return 0.0
+            
+        # Calculate class weights
+        weights = dict(zip(
+            np.unique(y),
+            class_weight.compute_class_weight('balanced', classes=np.unique(y), y=y)
+        ))
+        
         # Split into train/test sets
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42, shuffle=False
+            X, y, test_size=test_size, random_state=42, stratify=y
         )
         
         # Scale features
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
         
-        # Train model
+        # Train model with class weights
         self.model.fit(X_train_scaled, y_train)
         
-        # Evaluate
+        # Evaluate with zero_division parameter set
         y_pred = self.model.predict(X_test_scaled)
         accuracy = accuracy_score(y_test, y_pred)
         print(f"Model Accuracy: {accuracy:.4f}")
-        print(classification_report(y_test, y_pred))
+        print(classification_report(y_test, y_pred, zero_division=0))
+        
+        # Print class distribution
+        unique, counts = np.unique(y, return_counts=True)
+        print("\nClass Distribution:")
+        for label, count in zip(unique, counts):
+            print(f"Class {label}: {count} samples ({count/len(y)*100:.1f}%)")
         
         self.is_trained = True
         

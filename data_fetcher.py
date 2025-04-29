@@ -30,26 +30,47 @@ def interval_to_milliseconds(interval_str):
 
 def get_binance_client():
     """Initializes and returns the Binance client based on config."""
-    # (Keep existing get_binance_client function as is)
-    use_testnet = config.USE_TESTNET_FOR_DATA
-    if use_testnet:
-        print("Error: Testnet connection not fully configured for long history fetching.")
-        return None
-    else: # Use Live API
+    # Get API keys based on mode
+    if config.USE_TESTNET:
+        api_key = os.getenv(config.TESTNET_API_KEY_ENV)
+        api_secret = os.getenv(config.TESTNET_API_SECRET_ENV)
+        print("Connecting to Binance Testnet...")
+    else:
         api_key = os.getenv(config.LIVE_API_KEY_ENV)
         api_secret = os.getenv(config.LIVE_API_SECRET_ENV)
-        print("Attempting to connect to Binance LIVE API (using configured keys)...")
-        if not api_key or not api_secret:
-            print(f"Error: Binance LIVE API keys ({config.LIVE_API_KEY_ENV}, {config.LIVE_API_SECRET_ENV}) not found.")
-            return None
+        print("Connecting to Binance Live API...")
+
+    if not api_key or not api_secret:
+        env_key = config.TESTNET_API_KEY_ENV if config.USE_TESTNET else config.LIVE_API_KEY_ENV
+        print(f"Error: Binance API keys not found in environment ({env_key})")
+        return None
+
     try:
-        client = Client(api_key, api_secret, testnet=use_testnet)
-        client.ping()
-        api_type = "Testnet" if use_testnet else "LIVE API"
-        print(f"Successfully connected to Binance {api_type}.")
-        return client
+        # For data fetching, we might want to use live API even in testnet mode
+        if config.USE_TESTNET_FOR_DATA:
+            client = Client(api_key, api_secret, testnet=config.USE_TESTNET)
+        else:
+            # Use live API for data but keep testnet flag for trading
+            live_key = os.getenv(config.LIVE_API_KEY_ENV)
+            live_secret = os.getenv(config.LIVE_API_SECRET_ENV)
+            if live_key and live_secret:
+                client = Client(live_key, live_secret, testnet=False)
+            else:
+                client = Client(api_key, api_secret, testnet=config.USE_TESTNET)
+
+        # Test connection and API key validity
+        try:
+            # Try to get account info as this requires valid API keys
+            client.get_account()
+            api_type = "Testnet" if config.USE_TESTNET else "Live API"
+            print(f"Successfully connected to Binance {api_type}")
+            return client
+        except Exception as api_error:
+            print(f"Error validating API keys: {api_error}")
+            return None
+
     except Exception as e:
-        api_type = "Testnet" if use_testnet else "LIVE API"
+        api_type = "Testnet" if config.USE_TESTNET else "Live API"
         print(f"Error connecting to Binance {api_type}: {e}")
         return None
 
