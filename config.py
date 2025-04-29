@@ -49,3 +49,9 @@ COL_EMA_LONGTERM     = f'EMA_{LONG_TERM_EMA_PERIOD}'
 COL_RSI              = f'RSI_{RSI_PERIOD}'
 COL_ATR              = f'ATRr_{ATR_PERIOD}'
 COL_SIGNAL           = 'Signal'
+
+# --- ML Model Settings ---
+ML_RETRAIN_DAYS = 7       # Retrain model every 7 days
+ML_MIN_ACCURACY = 0.60    # Minimum required accuracy
+ML_CONFIDENCE_THRESHOLD = 0.65  # Minimum probability for trade entry
+ML_TRAINING_WINDOW = 500  # Number of candles to use for training

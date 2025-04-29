@@ -12,7 +12,7 @@ class TelegramNotifier:
         self.enabled = config.ENABLE_NOTIFICATIONS and self.bot_token and self.chat_id
         
         if self.enabled:
-            print("Telegram notification sent!")
+            print("Telegram notifications enabled")
         else:
             print("Telegram notifications disabled - check bot token and chat ID")
 

@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.utils import class_weight
-import config  # Add missing import
+import config  # Use base config instead of live_config
 import indicators  # Import at the top level
 
 class MLPredictor:
@@ -101,6 +101,11 @@ class MLPredictor:
         """Train the machine learning model with improved class handling"""
         df = df.copy()
         
+        # Check if we have enough data
+        if len(df) < config.ML_TRAINING_WINDOW:
+            print(f"Warning: Insufficient data for ML training. Got {len(df)} candles, need {config.ML_TRAINING_WINDOW}")
+            print("Will proceed with available data but predictions may be less reliable")
+        
         # Prepare features and labels
         X = self.prepare_features(df)
         y = self.prepare_labels(df)
@@ -115,9 +120,18 @@ class MLPredictor:
         X = X[valid_idx]
         y = y[valid_idx]
         
+        # Check minimum required samples
         if len(X) < 100:
             print("Warning: Not enough valid data points for training")
             return 0.0
+            
+        # Check class balance
+        class_counts = np.bincount(y)
+        if len(class_counts) > 1:
+            minority_pct = (class_counts.min() / len(y)) * 100
+            if minority_pct < 10:
+                print(f"Warning: Severe class imbalance detected. Minority class is only {minority_pct:.1f}%")
+                print("Consider adjusting label thresholds or collecting more data")
             
         # Calculate class weights
         weights = dict(zip(
@@ -160,7 +174,14 @@ class MLPredictor:
         print("\nFeature Importance:")
         print(feature_importance)
         
-        return accuracy
+        # Return model metrics
+        metrics = {
+            'accuracy': accuracy,
+            'data_points': len(X),
+            'class_balance': minority_pct if len(class_counts) > 1 else 50.0
+        }
+        
+        return metrics
     
     def predict(self, df):
         """

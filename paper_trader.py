@@ -186,6 +186,13 @@ class PaperTrader:
     def update_market_data(self):
         """Fetch and process latest market data"""
         try:
+            # Get current time
+            current_time = datetime.now()
+            
+            # Only generate signals at the start of a new hour
+            is_new_hour = (not self.last_update or 
+                          current_time.hour != self.last_update.hour)
+            
             # Fetch latest candle
             candles = self.client.get_klines(
                 symbol=config.SYMBOL,
@@ -199,16 +206,19 @@ class PaperTrader:
             current_candle = candles[0]
             current_price = float(current_candle[4])  # Close price
             
-            # Update positions
+            # Update positions with current price
             self._update_positions(current_price)
             
-            # Get trading signal
-            signal = self._generate_trading_signal()
+            # Only check for new trades at the start of new candles
+            if is_new_hour:
+                # Get trading signal
+                signal = self._generate_trading_signal()
+                
+                if signal == 1 and len(self.positions) < config.MAX_TRADES:
+                    print("\nNew hour started - checking for trading opportunities...")
+                    self._open_position(current_price, 'long')
             
-            if signal == 1 and len(self.positions) < config.MAX_TRADES:
-                self._open_position(current_price, 'long')
-            
-            self.last_update = datetime.now()
+            self.last_update = current_time
             
             return current_price
             
