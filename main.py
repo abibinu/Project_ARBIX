@@ -17,56 +17,86 @@ from market_regime import MarketRegimeDetector
 from ml_predictor import MLPredictor
 from param_optimizer import optimize_parameters
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+console = Console()
+
 def run_enhanced():
     """Main execution function with enhancements."""
     start_time = time.time()
 
+    # Display welcome banner
+    console.print(Panel(
+        "[bold green]      ___   ____  ____  ________  __[/bold green]\n"
+        "[bold green]     /   | / __ \\/ __ )/  _/ __ \\/ /[/bold green]\n"
+        "[bold green]    / /| |/ /_/ / __  |/ // /_/ / / [/bold green]\n"
+        "[bold green]   / ___ / _, _/ /_/ // // _, _/_/  [/bold green]\n"
+        "[bold green]  /_/  |/_/ |_/_____/___/_/ |_(_)   [/bold green]\n\n"
+        "      [bold cyan]Algorithmic Crypto Trading System (v2.1)[/bold cyan]\n"
+        "      [dim white]Powered by Machine Learning & Adaptive Regimes[/dim white]",
+        border_style="green",
+        expand=False
+    ))
+
     # 1. Initialize Client
     client = data_fetcher.get_binance_client()
     if client is None:
+        console.print("[bold red]Error: Failed to initialize Binance Client. Check your API credentials.[/bold red]")
         return
 
     # 2. Fetch Data 
-    print(f"\nFetching historical data from {config.BACKTEST_START_DATE}...")
-    df = data_fetcher.fetch_historical_data_chunked(
-        client,
-        symbol=config.SYMBOL,
-        interval=config.INTERVAL,
-        start_str=config.BACKTEST_START_DATE,
-        end_str=config.BACKTEST_END_DATE
-    )
+    df = None
+    with console.status(f"[bold yellow]Fetching historical data from {config.BACKTEST_START_DATE}...[/bold yellow]") as status:
+        df = data_fetcher.fetch_historical_data_chunked(
+            client,
+            symbol=config.SYMBOL,
+            interval=config.INTERVAL,
+            start_str=config.BACKTEST_START_DATE,
+            end_str=config.BACKTEST_END_DATE
+        )
 
     if df is None or df.empty:
-        print("Stopping execution due to data fetching error or empty data.")
+        console.print("[bold red]Stopping execution due to data fetching error or empty data.[/bold red]")
         return
+    
+    console.print(f"[bold green]✓[/bold green] Historical data fetched successfully. {len(df)} rows loaded.")
 
     # 3. Calculate Indicators
     df_with_indicators = indicators.add_indicators(df.copy())
     if df_with_indicators.empty:
-        print("Stopping execution: DataFrame empty after indicator calculation.")
+        console.print("[bold red]Stopping execution: DataFrame empty after indicator calculation.[/bold red]")
         return
 
     # Train ML Model and get predictions before regime detection
-    print("\nTraining ML model for signal enhancement...")
     ml_model = MLPredictor()
-    training_accuracy = ml_model.train(df_with_indicators)
+    training_accuracy = 0.0
+    
+    with console.status("[bold yellow]Training ML model for signal enhancement...[/bold yellow]") as status:
+        # train returns metrics dict or accuracy
+        metrics = ml_model.train(df_with_indicators)
+        if isinstance(metrics, dict):
+            training_accuracy = metrics.get('accuracy', 0.0)
+        else:
+            training_accuracy = float(metrics)
+    
+    console.print(f"[bold green]✓[/bold green] ML Model trained successfully. Accuracy: [bold green]{training_accuracy:.2%}[/bold green]")
     
     # Get ML predictions
     buy_probabilities = ml_model.predict(df_with_indicators)
     df_with_indicators['ml_buy_prob'] = buy_probabilities
 
     # 4. Detect Market Regimes
-    print("\nDetecting market regimes...")
-    regime_detector = MarketRegimeDetector(window_size=30)
-    df_with_regimes = regime_detector.detect_regime(df_with_indicators)
+    df_with_regimes = None
+    with console.status("[bold yellow]Detecting market regimes...[/bold yellow]") as status:
+        regime_detector = MarketRegimeDetector(window_size=30)
+        df_with_regimes = regime_detector.detect_regime(df_with_indicators)
     
     # Ensure all timestamps are datetime type
     df_with_indicators.index = pd.to_datetime(df_with_indicators.index)
     df_with_regimes.index = pd.to_datetime(df_with_regimes.index)
     
-    # Save the index name for later restoration
-    index_name = df_with_regimes.index.name or 'timestamp'
-
     # Merge ml_buy_prob with regimes using concat on the datetime index
     if 'ml_buy_prob' in df_with_indicators.columns:
         df_with_regimes = pd.concat([
@@ -75,36 +105,36 @@ def run_enhanced():
         ], axis=1)
         df_with_regimes['ml_buy_prob'] = df_with_regimes['ml_buy_prob'].fillna(0)
     else:
-        print("Warning: 'ml_buy_prob' column not found in df_with_indicators. Check ML model.")
+        console.print("[bold red]Warning: 'ml_buy_prob' column not found in df_with_indicators. Check ML model.[/bold red]")
         return
     
-    # Print regime distribution
+    # Print regime distribution in a rich table
     regime_counts = df_with_regimes['regime'].value_counts()
-    print("Market Regime Distribution:")
-    for regime, count in regime_counts.items():
-        print(f"  {regime}: {count} periods ({count/len(df_with_regimes)*100:.1f}%)")
+    regime_table = Table(title="Market Regime Distribution", show_header=True, header_style="bold cyan")
+    regime_table.add_column("Regime Type", style="bold white")
+    regime_table.add_column("Periods", justify="right")
+    regime_table.add_column("Percentage", justify="right")
     
-    # 5. Optional: Parameter Optimization (uncomment if needed)
-    """
-    print("\nPerforming parameter optimization...")
-    param_ranges = {
-        'EMA_SHORT_PERIOD': [10, 15, 20, 25, 30],
-        'EMA_LONG_PERIOD': [40, 50, 60, 70],
-        'RSI_PERIOD': [9, 14, 21],
-        'RSI_BUY_THRESHOLD': [45, 50, 55, 60],
-        'ATR_SL_MULTIPLIER': [1.0, 1.5, 2.0],
-        'ATR_TP_MULTIPLIER': [1.5, 2.0, 2.5, 3.0]
+    regime_colors = {
+        'uptrend': 'green',
+        'downtrend': 'red',
+        'volatile': 'magenta',
+        'ranging': 'blue',
+        'normal': 'yellow'
     }
-    optimization_results = optimize_parameters(df_with_indicators, param_ranges)
-    best_params = optimization_results['best_params_sharpe']  # Use Sharpe-optimized parameters
+
+    for regime, count in regime_counts.items():
+        color = regime_colors.get(regime, 'white')
+        pct = (count / len(df_with_regimes)) * 100
+        regime_table.add_row(
+            f"[{color}]{regime}[/{color}]", 
+            str(count), 
+            f"{pct:.1f}%"
+        )
+    console.print(regime_table)
     
-    # Update config with optimized parameters
-    for param, value in best_params.items():
-        setattr(config, param, value)
-    """
-    
-    # 6. Generate Signals (with ML enhancement)
-    print("\nGenerating trading signals...")
+    # 5. Generate Signals (with ML enhancement)
+    console.print("[bold yellow]\nGenerating trading signals...[/bold yellow]")
     df_with_signals = strategy.generate_signals(df_with_indicators)
     
     # Add ML filter: only take signals with high probability
@@ -137,7 +167,7 @@ def run_enhanced():
             df_with_signals.loc[i, config.COL_SIGNAL] = 0
     
     # 8. Run Backtest Simulation with Risk Management
-    print("\nRunning backtest with enhanced risk management...")
+    console.print("[bold yellow]\nRunning backtest with enhanced risk management...[/bold yellow]")
     risk_manager = RiskManager(config.INITIAL_CAPITAL, risk_pct=config.RISK_PCT_PER_TRADE)
     
     # Replace standard backtest with risk-managed version
@@ -161,26 +191,27 @@ def run_enhanced():
             trades_df
         )
     else:
-        print("\nBacktest did not produce results to report or plot.")
+        console.print("[bold red]\nBacktest did not produce results to report or plot.[/bold red]")
 
     end_time = time.time()
-    print(f"\nTotal Execution Time: {end_time - start_time:.2f} seconds")
+    console.print(Panel(
+        f"[bold green]Backtest Simulation Complete.[/bold green]\n"
+        f"Total Execution Time: [bold cyan]{end_time - start_time:.2f} seconds[/bold cyan]\n"
+        f"Exiting ARBIX (by ABI)",
+        border_style="green",
+        expand=False
+    ))
 
 def plot_enhanced_results(df, df_regimes, portfolio_values, trades_df):
     """Enhanced plotting with market regimes visualization"""
-    # Use reporting module's plotting function as base
-    # Add market regime visualization
-    # (Implementation left as an exercise - could extend your reporting.py)
-    reporting.plot_results(df, portfolio_values, trades_df)
+    reporting.plot_results(df, portfolio_values, trades_df, df_regimes=df_regimes)
 
 if __name__ == "__main__":
     try:
         run_enhanced()
     except Exception as e:
-        print("\n--- A critical error occurred in main execution ---")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Error details: {e}")
-        print("\n--- Traceback ---")
+        console.print("\n[bold red]--- A critical error occurred in main execution ---[/bold red]")
+        console.print(f"[bold red]Error type:[/bold red] {type(e).__name__}")
+        console.print(f"[bold red]Error details:[/bold red] {e}")
+        console.print("\n--- Traceback ---")
         traceback.print_exc()
-
-    print("\nExiting ARBIX (by ABI)")

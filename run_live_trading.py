@@ -1,5 +1,5 @@
 """
-Live trading execution script
+Live trading execution script with styled terminal dashboard
 """
 import time
 import sys
@@ -10,6 +10,8 @@ import pandas as pd
 import live_config as config
 from paper_trader import PaperTrader
 from notifications import TelegramNotifier
+from rich.live import Live
+import reporting
 
 # Initialize global variables
 trader = None
@@ -72,19 +74,23 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    print("Initializing trading bot...")
     # Initialize trader
     trader = PaperTrader()
     
-    print(f"\nStarting {'paper' if config.PAPER_TRADING else 'live'} trading for {config.SYMBOL}")
-    print(f"Update interval: {config.UPDATE_INTERVAL} seconds")
-    print(f"Trading on: {'Testnet' if config.USE_TESTNET else 'Live'} API")
-    print("Press Ctrl+C to stop\n")
+    # Load previous state if exists
+    trader.load_state()
+
+    mode_str = "Paper" if config.PAPER_TRADING else "Live"
+    trader.log("Bot initialization complete.")
+    trader.log(f"{mode_str} trading started on {'Testnet' if config.USE_TESTNET else 'Live'} API.")
+    trader.log(f"Trading Pair: {config.SYMBOL}, Timeframe: {config.INTERVAL}")
     
     # Send startup notification
     notifier = TelegramNotifier()
     notifier.send_message(
         f"🚀 Trading bot started\n"
-        f"Mode: {'Paper' if config.PAPER_TRADING else 'Live'}\n"
+        f"Mode: {mode_str}\n"
         f"Symbol: {config.SYMBOL}\n"
         f"Interval: {config.INTERVAL}\n"
         f"Initial Balance: ${trader.balance:.2f}"
@@ -92,50 +98,50 @@ if __name__ == "__main__":
 
     last_model_train = datetime.now()
     training_interval = timedelta(days=7)  # Retrain weekly by default
+    current_price = None
+    seconds_to_next = 0
     
-    while True:
-        try:
-            current_time = datetime.now()
-            
-            # Check if it's time to retrain the model
-            if current_time - last_model_train >= training_interval:
-                print("\nRetraining ML model with recent data...")
-                historical_data = trader._fetch_initial_data()
-                if not historical_data.empty:
-                    trader.ml_predictor.train(historical_data)
-                    last_model_train = current_time
-                    notifier.send_message("🧠 ML model retrained successfully")
-            
-            # Only fetch new data if needed based on timeframe
-            if should_update_data(config.INTERVAL):
-                current_price = trader.update_market_data()
-                last_candle_time = current_time
-            else:
-                current_price = trader.get_current_price()  # Just get current price without full update
-            
-            if current_price:
-                # Calculate time until next candle
+    # Start Live Dashboard
+    with Live(reporting.generate_dashboard_layout(trader, current_price, seconds_to_next, mode=mode_str), refresh_per_second=1) as live:
+        while True:
+            try:
+                current_time = datetime.now()
+                
+                # Check if it's time to retrain the model
+                if current_time - last_model_train >= training_interval:
+                    trader.log("Retraining ML model with recent data...")
+                    historical_data = trader._fetch_initial_data()
+                    if not historical_data.empty:
+                        trader.ml_predictor.train(historical_data)
+                        last_model_train = current_time
+                        trader.log("ML model retrained successfully.")
+                        notifier.send_message("🧠 ML model retrained successfully")
+                
+                # Only fetch new data if needed based on timeframe
+                if should_update_data(config.INTERVAL):
+                    current_price = trader.update_market_data()
+                    last_candle_time = current_time
+                else:
+                    current_price = trader.get_current_price()  # Just get current price without full update
+                
+                # Save state periodically
+                trader.save_state()
+                
+                # Calculate time until next candle update
                 seconds_to_next = calculate_next_interval(config.INTERVAL)
                 
-                print(f"\r{current_time.strftime('%Y-%m-%d %H:%M:%S')} | "
-                      f"Price: ${current_price:.4f} | "
-                      f"Balance: ${trader.balance:.2f} | "
-                      f"Active Positions: {len(trader.positions)} | "
-                      f"Next Update: {seconds_to_next}s", end="")
-            
-            # Save state periodically
-            trader.save_state()
-            
-            # Sleep until next check
-            # Use a smaller sleep time for price monitoring but bigger for data updates
-            sleep_time = min(60, max(1, seconds_to_next - 5))  # At least 1 second, at most 60 seconds
-            time.sleep(sleep_time)
-            
-        except Exception as e:
-            error_msg = f"Error in main loop: {e}"
-            print(f"\n{error_msg}")
-            notifier.notify_error(error_msg)
-            notifier.send_message("🔴 Bot shutting down - Unexpected error occurred")
-            if trader:
-                trader.save_state()
-            sys.exit(1)
+                # Countdown for next update
+                for s in range(seconds_to_next, 0, -1):
+                    live.update(reporting.generate_dashboard_layout(trader, current_price, s, mode=mode_str))
+                    time.sleep(1)
+                    # If we need a candle update immediately, break early
+                    if should_update_data(config.INTERVAL):
+                        break
+                
+            except Exception as e:
+                error_msg = f"Error in main loop: {e}"
+                if trader:
+                    trader.log(f"Error: {error_msg}")
+                    trader.save_state()
+                notifier.notify_error(error_msg)
+                time.sleep(10)

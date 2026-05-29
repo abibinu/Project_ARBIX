@@ -132,12 +132,22 @@ class PaperTrader:
         self.trade_history = []
         self.last_update = None
         self.notifier = TelegramNotifier()
+        self.logs = []
+        self.current_regime = "normal"
+        self.last_ml_prob = 0.5
         self._initialize_models()
         
         # Load trading mode
         self.paper_trading = config.PAPER_TRADING
         print(f"Trading Mode: {'Paper' if self.paper_trading else 'Live'}")
         print(f"Using {'Testnet' if config.USE_TESTNET else 'Live'} API")
+
+    def log(self, message: str):
+        """Append log message to the log list for terminal rendering."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.logs.append(f"[{timestamp}] {message}")
+        if len(self.logs) > 50:
+            self.logs.pop(0)
 
     def _initialize_models(self):
         """Initialize ML model with some historical data"""
@@ -215,7 +225,7 @@ class PaperTrader:
                 signal = self._generate_trading_signal()
                 
                 if signal == 1 and len(self.positions) < config.MAX_TRADES:
-                    print("\nNew hour started - checking for trading opportunities...")
+                    self.log("New hour started - checking for trading opportunities...")
                     self._open_position(current_price, 'long')
             
             self.last_update = current_time
@@ -223,7 +233,7 @@ class PaperTrader:
             return current_price
             
         except Exception as e:
-            print(f"Error updating market data: {e}")
+            self.log(f"Error updating market data: {e}")
             return None
 
     def _generate_trading_signal(self) -> int:
@@ -249,10 +259,11 @@ class PaperTrader:
             
             # Get regime
             df = self.regime_detector.detect_regime(df)
-            current_regime = df['regime'].iloc[-1]
+            self.current_regime = df['regime'].iloc[-1]
             
             # Get ML prediction
             ml_probability = self.ml_predictor.predict(df).iloc[-1]
+            self.last_ml_prob = float(ml_probability)
             
             # Get standard strategy signal
             df = generate_signals(df)
@@ -260,15 +271,15 @@ class PaperTrader:
             
             # Combine signals
             if (base_signal == 1 and  # Strategy signal is buy
-                ml_probability > config.ML_CONFIDENCE_THRESHOLD and  # ML confirms with required confidence
-                current_regime != 'downtrend' and  # Not in downtrend
-                self.risk_manager.should_trade(current_regime)):  # Risk allows
+                self.last_ml_prob > config.ML_CONFIDENCE_THRESHOLD and  # ML confirms with required confidence
+                self.current_regime != 'downtrend' and  # Not in downtrend
+                self.risk_manager.should_trade(self.current_regime)):  # Risk allows
                 return 1
                 
             return 0
             
         except Exception as e:
-            print(f"Error generating trading signal: {e}")
+            self.log(f"Error generating trading signal: {e}")
             return 0
 
     def _update_positions(self, current_price: float):
@@ -293,7 +304,7 @@ class PaperTrader:
                 current_price, stop_loss)
             
             if position_size * current_price < config.MIN_TRADE_USDT:
-                print(f"Position size too small: ${position_size * current_price:.2f}")
+                self.log(f"Position size too small: ${position_size * current_price:.2f}")
                 return
 
             if not self.paper_trading:
@@ -346,15 +357,11 @@ class PaperTrader:
             )
             
             # Log trade
-            print(f"\nOpened {side} position:")
-            print(f"Price: ${position.entry_price:.4f}")
-            print(f"Size: {position.quantity:.4f}")
-            print(f"Stop Loss: ${stop_loss:.4f}")
-            print(f"Take Profit: ${take_profit:.4f}")
+            self.log(f"Opened {side} position - Price: ${position.entry_price:.4f}, Qty: {position.quantity:.4f}, SL: ${stop_loss:.4f}, TP: ${take_profit:.4f}")
             
         except Exception as e:
             error_msg = f"Error opening position: {e}"
-            print(error_msg)
+            self.log(error_msg)
             self.notifier.notify_error(error_msg)
 
     def _close_position(self, position: Position, exit_price: float, reason: str):
@@ -401,15 +408,11 @@ class PaperTrader:
             )
             
             # Log trade
-            print(f"\nClosed position - {reason}:")
-            print(f"Entry: ${position.entry_price:.4f}")
-            print(f"Exit: ${exit_price:.4f}")
-            print(f"P/L: ${position.pnl:.2f}")
-            print(f"New Balance: ${self.balance:.2f}")
+            self.log(f"Closed position - {reason} - Entry: ${position.entry_price:.4f}, Exit: ${exit_price:.4f}, P/L: ${position.pnl:.2f}, Balance: ${self.balance:.2f}")
             
         except Exception as e:
             error_msg = f"Error closing position: {e}"
-            print(error_msg)
+            self.log(error_msg)
             self.notifier.notify_error(error_msg)
 
     def _calculate_atr(self) -> float:
